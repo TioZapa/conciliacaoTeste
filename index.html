@@ -559,6 +559,7 @@
 
     const idCol=E.colmap['identificador pagamento'], valCol=E.colmap['valor recebido'],
           dtCol=E.colmap['data do pagamento'], hrCol=E.colmap['hora do pagamento'],
+          dcCol=E.colmap['data contabil'],
           cpfCol=E.colmap['cpf/cnpj do pagador efetivo'], nomeCol=E.colmap['nome do pagador efetivo'];
 
     const recs=[]; const pendencias=[]; const extratoRaw=[];
@@ -568,15 +569,18 @@
       const vraw=row[valCol]; if(vraw==null||vraw==='') continue;
       const hv = hrCol!=null?row[hrCol]:null;
       const hora = (hv instanceof Date)?(pad(hv.getHours())+':'+pad(hv.getMinutes())):(hv!=null?hv.toString():'');
-      const dataF=fmtDate(row[dtCol]);
+      const dataPagF=fmtDate(row[dtCol]);                          // data do pagamento (quando o cliente pagou)
+      const dcRaw = dcCol!=null?row[dcCol]:null;
+      const temContabil = dcRaw!=null && dcRaw!=='';
+      const dataF = temContabil ? fmtDate(dcRaw) : dataPagF;       // data contábil (quando caiu no banco); fallback p/ pagamento
       const nomeF=row[nomeCol]!=null?row[nomeCol].toString():'';
       const cpfF=row[cpfCol]!=null?row[cpfCol].toString():'';
       const valorF=toNum(vraw);
-      const ts=getTs(row[dtCol], hrCol!=null?row[hrCol]:null);
+      const ts=getTs(temContabil?dcRaw:row[dtCol], hrCol!=null?row[hrCol]:null);
       extratoRaw.push({
         identificador_pagamento: idp,
         valor_recebido: valorF,
-        data_pagamento: dataF,
+        data_pagamento: dataPagF,
         hora_pagamento: hora,
         cpf_cnpj_pagador: cpfF,
         nome_pagador: nomeF,
