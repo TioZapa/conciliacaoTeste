@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Conciliação de Recebimentos Pix — Fenix</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/xlsx-js-style@1.2.0/dist/xlsx.bundle.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+  (function(){ try{ var t=localStorage.getItem('fenix-theme'); if(t==='light'||t==='dark') document.documentElement.setAttribute('data-theme',t); }catch(e){} })();
+</script>
+<style>
+  :root{
+    --bg:#eef1f5; --surface:#ffffff; --surface-2:#f7f9fb;
+    --ink:#1a2530; --muted:#5d6b79; --faint:#8895a2;
+    --line:#dbe2ea; --line-strong:#c4cfda;
+    --brand:#1b5e3f; --brand-ink:#134430; --brand-soft:#e3efe9;
+    --ok:#2e7d46; --ok-soft:#e3f3e9;
+    --warn-bg:#fff3d1; --warn-line:#e9cf7d; --warn-ink:#846200;
+    --shadow:0 1px 2px rgba(20,40,60,.06), 0 8px 24px rgba(20,40,60,.06);
+    --radius:14px;
+  }
+  :root:not([data-theme="light"]){
+    @media (prefers-color-scheme: dark){
+      --bg:#0e141b; --surface:#161e27; --surface-2:#1b242e;
+      --ink:#e7edf3; --muted:#9fb0bf; --faint:#728394;
+      --line:#28333f; --line-strong:#34424f;
+      --brand:#57b891; --brand-ink:#74c7a6; --brand-soft:#14281f;
+      --ok:#4cc27e; --ok-soft:#16281e;
+      --warn-bg:#332a10; --warn-line:#5c4c1e; --warn-ink:#e8c766;
+      --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0e141b; --surface:#161e27; --surface-2:#1b242e;
+    --ink:#e7edf3; --muted:#9fb0bf; --faint:#728394;
+    --line:#28333f; --line-strong:#34424f;
+    --brand:#57b891; --brand-ink:#74c7a6; --brand-soft:#14281f;
+    --ok:#4cc27e; --ok-soft:#16281e;
+    --warn-bg:#332a10; --warn-line:#5c4c1e; --warn-ink:#e8c766;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 30px rgba(0,0,0,.35);
+  }
+
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:'Inter',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    font-size:15px; line-height:1.5; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:920px; margin:0 auto; padding:32px 20px 72px}
+
+  header.top{display:flex; align-items:baseline; gap:14px; flex-wrap:wrap; margin-bottom:6px}
+  .mark{
+    font-family:'Space Grotesk',sans-serif; font-weight:700; letter-spacing:-.01em;
+    font-size:13px; color:#fff; background:var(--brand);
+    padding:5px 10px; border-radius:8px; line-height:1;
+  }
+  h1{font-size:24px; font-weight:700; letter-spacing:-.02em; margin:0}
+  .theme{margin-left:auto; display:inline-flex; gap:2px; padding:3px; border:1px solid var(--line); border-radius:10px; background:var(--surface)}
+  .theme button{
+    font:inherit; font-size:12.5px; font-weight:600; color:var(--muted);
+    background:transparent; border:0; border-radius:7px; padding:5px 9px; cursor:pointer;
+    display:inline-flex; align-items:center; gap:5px; line-height:1; transition:background .12s, color .12s;
+  }
+  .theme button:hover{color:var(--ink)}
+  .theme button svg{display:block}
+  .theme button.active{background:var(--brand-soft); color:var(--brand)}
+  .sub{color:var(--muted); margin:4px 0 28px; max-width:60ch}
+
+  .card{
+    background:var(--surface); border:1px solid var(--line);
+    border-radius:var(--radius); box-shadow:var(--shadow);
+  }
+  section{margin-top:22px}
+  .card-pad{padding:22px}
+  .step-h{display:flex; align-items:center; gap:10px; margin:0 0 16px}
+  .step-n{
+    width:24px; height:24px; border-radius:7px; background:var(--brand-soft);
+    color:var(--brand); font-weight:700; font-size:13px;
+    display:grid; place-items:center; flex:none;
+  }
+  .step-h h2{font-size:16px; font-weight:600; margin:0}
+
+  /* dropzone */
+  .drop{
+    border:1.5px dashed var(--line-strong); border-radius:12px;
+    background:var(--surface-2); padding:26px 20px; text-align:center;
+    cursor:pointer; transition:border-color .15s, background .15s;
+  }
+  .drop:hover,.drop.over{border-color:var(--brand); background:var(--brand-soft)}
+  .drop svg{display:block; margin:0 auto 8px; color:var(--brand)}
+  .drop b{font-weight:600}
+  .drop .hint{color:var(--faint); font-size:13px; margin-top:2px}
+
+  /* slots */
+  .slots{display:grid; grid-template-columns:1fr; gap:10px; margin-top:16px}
+  .slot{
+    display:flex; align-items:center; gap:12px;
+    border:1px solid var(--line); border-radius:11px; padding:12px 14px;
+    background:var(--surface);
+  }
+  .slot .dot{width:10px;height:10px;border-radius:50%;background:var(--line-strong);flex:none}
+  .slot.ready .dot{background:var(--ok)}
+  .slot .lbl{font-weight:600; flex:none; min-width:132px}
+  .slot .file{color:var(--muted); font-size:13.5px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .slot .state{margin-left:auto; font-size:12.5px; color:var(--faint); flex:none}
+  .slot.ready .state{color:var(--ok); font-weight:600}
+  .slot.error{border-color:var(--warn-line); background:var(--warn-bg)}
+  .slot.error .state{color:var(--warn-ink); font-weight:600}
+
+  .actions{display:flex; gap:12px; align-items:center; margin-top:20px; flex-wrap:wrap}
+  button.primary{
+    font:inherit; font-weight:600; color:#fff; background:var(--brand);
+    border:0; border-radius:10px; padding:11px 20px; cursor:pointer;
+    transition:background .15s, transform .05s;
+  }
+  button.primary:hover:not(:disabled){background:var(--brand-ink)}
+  button.primary:active:not(:disabled){transform:translateY(1px)}
+  button.primary:disabled{background:var(--line-strong); color:var(--faint); cursor:not-allowed}
+  button.ghost{
+    font:inherit; font-weight:500; color:var(--muted); background:transparent;
+    border:1px solid var(--line); border-radius:10px; padding:11px 16px; cursor:pointer;
+  }
+  button.ghost:hover{border-color:var(--line-strong); color:var(--ink)}
+  .msg{font-size:13.5px; color:var(--warn-ink)}
+
+  /* results */
+  #results{display:none}
+  #results.show{display:block}
+  .figs{display:grid; grid-template-columns:repeat(3,1fr); gap:0; border:1px solid var(--line); border-radius:12px; overflow:hidden}
+  .fig{padding:18px 20px}
+  .fig + .fig{border-left:1px solid var(--line)}
+  .fig .k{font-size:12.5px; color:var(--muted); font-weight:500}
+  .fig .v{font-family:'Space Grotesk',sans-serif; font-weight:600; letter-spacing:-.01em; font-size:26px; margin-top:3px; font-variant-numeric:tabular-nums}
+  .fig.total .v{color:var(--brand)}
+  .fig.warn .v{color:var(--warn-ink)}
+
+  .dl{margin:20px 0 6px}
+  button.download{
+    font:inherit; font-weight:600; font-size:15px; color:#fff; background:var(--ok);
+    border:0; border-radius:11px; padding:13px 22px; cursor:pointer; display:inline-flex; align-items:center; gap:9px;
+    transition:filter .15s, transform .05s;
+  }
+  button.download:hover{filter:brightness(1.06)}
+  button.download:active{transform:translateY(1px)}
+
+  .legend{display:flex; align-items:center; gap:8px; color:var(--muted); font-size:13px; margin:16px 0 10px}
+  .swatch{width:14px;height:14px;border-radius:4px;background:var(--warn-bg);border:1px solid var(--warn-line);flex:none}
+
+  .tablewrap{overflow-x:auto; border:1px solid var(--line); border-radius:12px}
+  table{border-collapse:collapse; width:100%; font-size:13.5px; font-variant-numeric:tabular-nums}
+  th,td{padding:9px 12px; text-align:left; white-space:nowrap; border-bottom:1px solid var(--line)}
+  thead th{background:var(--brand); color:#fff; font-weight:600; position:sticky; top:0}
+  tbody tr:last-child td{border-bottom:0}
+  td.num{text-align:right}
+  td.ctr{text-align:center}
+  tr.nomatch td{background:var(--warn-bg)}
+  .more{color:var(--faint); font-size:13px; text-align:center; padding:10px}
+
+  .flow{color:var(--muted); font-size:13px; margin-top:14px; line-height:1.6}
+  .flow code{background:var(--surface-2); border:1px solid var(--line); border-radius:5px; padding:1px 6px; font-size:12px}
+
+  .sb-cfg{margin-top:16px; padding:0; overflow:hidden}
+  .sb-cfg summary{list-style:none; cursor:pointer; display:flex; align-items:center; gap:9px; padding:14px 18px; font-weight:600; font-size:14px}
+  .sb-cfg summary::-webkit-details-marker{display:none}
+  .sb-dot{width:9px;height:9px;border-radius:50%;background:var(--line-strong);flex:none}
+  .sb-cfg.ok .sb-dot{background:var(--ok)}
+  .sb-state{margin-left:auto; font-size:12.5px; font-weight:500; color:var(--faint)}
+  .sb-cfg.ok .sb-state{color:var(--ok); font-weight:600}
+  .sb-body{padding:2px 18px 18px; border-top:1px solid var(--line)}
+  .sb-hint{color:var(--muted); font-size:12.5px; margin:12px 0}
+  .sb-body label{display:block; font-size:12.5px; font-weight:600; color:var(--muted); margin:10px 0 0}
+  .sb-body input{width:100%; margin-top:5px; font:inherit; font-size:13.5px; padding:9px 11px; border:1px solid var(--line); border-radius:9px; background:var(--surface-2); color:var(--ink)}
+  .sb-body input:focus{outline:none; border-color:var(--brand)}
+  .sb-actions{display:flex; align-items:center; gap:10px; margin-top:14px; flex-wrap:wrap}
+  .sb-status{margin-top:14px; font-size:13px; padding:11px 13px; border-radius:10px; border:1px solid var(--line); background:var(--surface-2); color:var(--muted); display:none}
+  .sb-status.show{display:block}
+  .sb-status.ok{border-color:var(--ok); background:var(--ok-soft); color:var(--ok)}
+  .sb-status.err{border-color:var(--warn-line); background:var(--warn-bg); color:var(--warn-ink)}
+  .sb-status.run{border-color:var(--brand); background:var(--brand-soft); color:var(--brand)}
+  footer{color:var(--faint); font-size:12.5px; margin-top:32px; text-align:center}
+  @media (max-width:560px){
+    .figs{grid-template-columns:1fr}
+    .fig + .fig{border-left:0; border-top:1px solid var(--line)}
+    .slot .lbl{min-width:0}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <span class="mark">FENIX</span>
+    <h1>Conciliação de Recebimentos Pix</h1>
+    <div class="theme" role="group" aria-label="Tema">
+      <button data-theme-set="light" aria-label="Modo claro" title="Claro">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+      </button>
+      <button data-theme-set="auto" aria-label="Automático" title="Automático">Auto</button>
+      <button data-theme-set="dark" aria-label="Modo escuro" title="Escuro">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+      </button>
+    </div>
+  </header>
+  <p class="sub">Importe os três relatórios e gere a planilha consolidada de pagamentos, cruzando o extrato bancário com o Shipay e o Control para trazer romaneio e razão social de cada recebimento.</p>
+
+  <details class="card sb-cfg" id="sb-cfg">
+    <summary>
+      <span class="sb-dot" id="sb-dot"></span>
+      Conexão com o Supabase
+      <span class="sb-state" id="sb-cfg-state">não configurado</span>
+    </summary>
+    <div class="sb-body">
+      <p class="sb-hint">Cole a URL do projeto e a chave <b>anon</b> (public). Ficam salvas só neste navegador. A cada geração, o extrato importado e a conciliação são gravados com um mesmo <b>id único</b>.</p>
+      <label>URL do projeto
+        <input type="text" id="sb-url" placeholder="https://xxxxxxxx.supabase.co" autocomplete="off" spellcheck="false">
+      </label>
+      <label>Chave anon (public)
+        <input type="password" id="sb-key" placeholder="eyJhbGciOi..." autocomplete="off" spellcheck="false">
+      </label>
+      <div class="sb-actions">
+        <button class="ghost" id="sb-save-cfg">Salvar conexão</button>
+        <button class="ghost" id="sb-clear-cfg">Remover</button>
+        <span class="msg" id="sb-cfg-msg"></span>
+      </div>
+      <p class="sb-hint">Salvar aqui é opcional — sem conexão, a ferramenta continua gerando e baixando a planilha normalmente.</p>
+    </div>
+  </details>
+
+  <section class="card card-pad">
+    <div class="step-h"><span class="step-n">1</span><h2>Importar arquivos</h2></div>
+
+    <div class="drop" id="drop">
+      <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 9 12 4 17 9"/><line x1="12" y1="4" x2="12" y2="16"/>
+      </svg>
+      <b>Arraste os arquivos aqui</b> ou clique para selecionar
+      <div class="hint">Aceita os 3 arquivos .xlsx de uma vez — o tipo é reconhecido automaticamente</div>
+      <input type="file" id="file" accept=".xlsx,.xls" multiple hidden>
+    </div>
+
+    <div class="slots">
+      <div class="slot" data-slot="shipay"><span class="dot"></span><span class="lbl">Shipay</span><span class="file">—</span><span class="state">aguardando</span></div>
+      <div class="slot" data-slot="control"><span class="dot"></span><span class="lbl">Control</span><span class="file">—</span><span class="state">aguardando</span></div>
+      <div class="slot" data-slot="extrato"><span class="dot"></span><span class="lbl">Extrato Bancário</span><span class="file">—</span><span class="state">aguardando</span></div>
+    </div>
+
+    <div class="actions">
+      <button class="primary" id="gen" disabled>Gerar planilha</button>
+      <button class="ghost" id="reset">Limpar</button>
+      <span class="msg" id="msg"></span>
+    </div>
+
+    <div class="flow">
+      Como o cruzamento é feito: o <b>Extrato</b> é a base (dinheiro recebido) e fornece data, pagador, CPF/CNPJ e valor.
+      Liga-se ao <b>Shipay</b> por <code>identificador pagamento = wallet_payment_id</code>, que traz o pedido, e ao <b>Control</b> por <code>external_id = Pedido</code>, que traz romaneio e razão social.
+    </div>
+  </section>
+
+  <section class="card card-pad" id="results">
+    <div class="step-h"><span class="step-n">2</span><h2>Resultado</h2></div>
+
+    <div class="figs">
+      <div class="fig"><div class="k">Registros</div><div class="v" id="f-count">0</div></div>
+      <div class="fig total"><div class="k">Total recebido</div><div class="v" id="f-total">R$ 0,00</div></div>
+      <div class="fig warn"><div class="k">Sem romaneio</div><div class="v" id="f-nomatch">0</div></div>
+    </div>
+
+    <div class="dl">
+      <button class="download" id="download">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Baixar planilha (.xlsx)
+      </button>
+    </div>
+
+    <div class="legend"><span class="swatch"></span> Só entram na planilha os pagamentos localizados no Shipay. Linhas em amarelo (se houver) estão no Shipay mas sem pedido no Control — ficam sem NF, romaneio e razão social para conferência.</div>
+
+    <div class="sb-status" id="sb-status"></div>
+
+    <div class="tablewrap">
+      <table id="preview">
+        <thead><tr><th>Data</th><th>Nome do pagador</th><th>Razão social</th><th>CPF/CNPJ</th><th>Valor (R$)</th><th>Nota Fiscal</th><th>Romaneio</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>Processamento 100% local no seu navegador — nenhum arquivo é enviado para servidores.</footer>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  const XL = window.XLSX;
+  const $ = s => document.querySelector(s);
+
+  const norm = s => (s==null?'':s.toString()).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim();
+  const keyStr = v => { if(v==null) return ''; if(typeof v==='number') return Number.isFinite(v)?Math.round(v).toString():''; return v.toString().trim(); };
+  const pad = n => n<10?'0'+n:''+n;
+  const brl = n => (n||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'});
+
+  const TYPES = {
+    shipay:  { label:'Shipay',           markers:['wallet_payment_id','external_id'] },
+    control: { label:'Control',          markers:['romaneio','pedido','razao social'] },
+    extrato: { label:'Extrato Bancário', markers:['identificador pagamento','valor recebido','nome do pagador efetivo'] },
+  };
+
+  const state = { shipay:null, control:null, extrato:null };
+  let records = null, extratoRaw = null;
+
+  // ---- Supabase ----
+  const SB_URL_K='fenix-sb-url', SB_KEY_K='fenix-sb-key';
+  function sbCfg(){ try{ return { url:(localStorage.getItem(SB_URL_K)||'').trim(), key:(localStorage.getItem(SB_KEY_K)||'').trim() }; }catch(e){ return {url:'',key:''}; } }
+  function sbConfigured(){ const c=sbCfg(); return !!(c.url && c.key); }
+  function sbClient(){ const c=sbCfg(); if(!c.url||!c.key||!window.supabase) return null; try{ return window.supabase.createClient(c.url,c.key); }catch(e){ return null; } }
+  function todayStr(){ const d=new Date(); return pad(d.getDate())+'-'+pad(d.getMonth()+1)+'-'+d.getFullYear(); }
+
+  function sbStatus(kind, html){ const el=document.getElementById('sb-status'); if(!el) return; el.className='sb-status show '+(kind||''); el.innerHTML=html; }
+
+  async function saveToSupabase(recs, extrato){
+    const client=sbClient();
+    if(!client){ return; }
+    const id=(crypto.randomUUID?crypto.randomUUID():(''+Date.now()+Math.random()).replace('.','') );
+    const d=todayStr();
+    const acertosNome='acertos_'+d, extratoNome='extrato_'+d;
+    sbStatus('run','Salvando no Supabase…');
+    const acertosRows=recs.map(r=>({ conciliacao_id:id, nome:acertosNome, data:r.data, nome_pagador:r.nome, razao_social:r.razao, cpf_cnpj:r.cpf, valor:r.valor, nota_fiscal:r.nf, romaneio:r.romaneio }));
+    const extratoRows=extrato.map(r=>({ conciliacao_id:id, nome:extratoNome, ...r }));
+    try{
+      const r1=await client.from('acertos').insert(acertosRows);
+      if(r1.error) throw new Error('acertos: '+r1.error.message);
+      const r2=await client.from('extratos').insert(extratoRows);
+      if(r2.error) throw new Error('extratos: '+r2.error.message);
+      sbStatus('ok','✓ Salvo no Supabase — <b>'+acertosNome+'</b> ('+recs.length+' linhas) e <b>'+extratoNome+'</b> ('+extrato.length+' linhas). id da conciliação: <code>'+id+'</code>');
+    }catch(err){
+      sbStatus('err','Não foi possível gravar no Supabase: '+err.message+'. Verifique a URL, a chave anon, as tabelas e as políticas de acesso (RLS). Obs.: a versão publicada (link online) não acessa o Supabase — rode esta página hospedada por você.');
+    }
+  }
+
+  function fixRef(ws){
+    // Alguns exports (ex.: extrato Itaú) declaram um intervalo (!ref) menor que os
+    // dados reais, fazendo o leitor ignorar as linhas. Recalcula pelo conteúdo real.
+    const keys=Object.keys(ws).filter(k=>/^[A-Z]+\d+$/.test(k));
+    if(!keys.length) return;
+    let minR=Infinity,minC=Infinity,maxR=0,maxC=0;
+    for(const k of keys){ const p=XL.utils.decode_cell(k); if(p.r<minR)minR=p.r; if(p.c<minC)minC=p.c; if(p.r>maxR)maxR=p.r; if(p.c>maxC)maxC=p.c; }
+    ws['!ref']=XL.utils.encode_range({s:{r:minR,c:minC},e:{r:maxR,c:maxC}});
+  }
+
+  function analyze(wb){
+    for(const sn of wb.SheetNames){
+      const ws = wb.Sheets[sn];
+      fixRef(ws);
+      const aoa = XL.utils.sheet_to_json(ws,{header:1,raw:true,defval:null});
+      const scan = Math.min(aoa.length,40);
+      for(const [tkey,tdef] of Object.entries(TYPES)){
+        for(let r=0;r<scan;r++){
+          const row = aoa[r]||[];
+          const set = new Set(row.map(norm).filter(Boolean));
+          if(tdef.markers.every(m=>set.has(m))){
+            const colmap={}; row.forEach((c,ci)=>{ const n=norm(c); if(n && !(n in colmap)) colmap[n]=ci; });
+            return { type:tkey, aoa, headerRow:r, colmap };
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  function toNum(v){
+    if(typeof v==='number') return v;
+    if(v==null) return 0;
+    let s=v.toString().trim();
+    if(/^-?\d+(\.\d+)?$/.test(s)) return parseFloat(s);
+    s=s.replace(/[^\d,.-]/g,'').replace(/\./g,'').replace(',','.');
+    const n=parseFloat(s); return isNaN(n)?0:n;
+  }
+  function fmtRom(v){ const s=keyStr(v); return s.length===11 ? s.slice(4,6)+'/'+s.slice(6,8)+'-'+s.slice(8,11) : s; }
+  function fmtDate(v){
+    if(v==null) return '';
+    if(v instanceof Date && !isNaN(v)) return pad(v.getDate())+'/'+pad(v.getMonth()+1)+'/'+v.getFullYear();
+    if(typeof v==='number'){ const d=XL.SSF.parse_date_code(v); if(d) return pad(d.d)+'/'+pad(d.m)+'/'+d.y; }
+    return v.toString().trim();
+  }
+  function getTs(dv,hv){
+    let d=null;
+    if(dv instanceof Date && !isNaN(dv)) d=new Date(dv.getFullYear(),dv.getMonth(),dv.getDate());
+    else if(typeof dv==='string'){ const m=dv.trim().match(/^(\d{2})\/(\d{2})\/(\d{4})/); if(m) d=new Date(+m[3],+m[2]-1,+m[1]); }
+    else if(typeof dv==='number'){ const p=XL.SSF.parse_date_code(dv); if(p) d=new Date(p.y,p.m-1,p.d); }
+    if(!d||isNaN(d)) return null;
+    let mins=0;
+    if(hv instanceof Date && !isNaN(hv)) mins=hv.getHours()*60+hv.getMinutes();
+    else if(typeof hv==='string'){ const m=hv.trim().match(/^(\d{1,2}):(\d{2})/); if(m) mins=+m[1]*60 + +m[2]; }
+    else if(typeof hv==='number'){ mins=Math.round((hv%1)*1440); }
+    return d.getTime()+mins*60000;
+  }
+
+  function buildRecords(){
+    const S=state.shipay, C=state.control, E=state.extrato;
+    const wpCol=S.colmap['wallet_payment_id'], extCol=S.colmap['external_id'];
+    const shMap=new Map();
+    for(let r=S.headerRow+1;r<S.aoa.length;r++){ const row=S.aoa[r]; if(!row) continue; const wp=keyStr(row[wpCol]); if(wp) shMap.set(wp, keyStr(row[extCol])); }
+
+    const pCol=C.colmap['pedido'], romCol=C.colmap['romaneio'], razCol=C.colmap['razao social'], nfCol=C.colmap['nf'];
+    const ctMap=new Map();
+    for(let r=C.headerRow+1;r<C.aoa.length;r++){ const row=C.aoa[r]; if(!row) continue; const ped=keyStr(row[pCol]); if(!ped||ctMap.has(ped)) continue; ctMap.set(ped,{rom:row[romCol], raz:row[razCol], nf:(nfCol!=null?row[nfCol]:null)}); }
+
+    const idCol=E.colmap['identificador pagamento'], valCol=E.colmap['valor recebido'],
+          dtCol=E.colmap['data do pagamento'], hrCol=E.colmap['hora do pagamento'],
+          cpfCol=E.colmap['cpf/cnpj do pagador efetivo'], nomeCol=E.colmap['nome do pagador efetivo'];
+
+    const recs=[]; let dropped=0; const extratoRaw=[];
+    for(let r=E.headerRow+1;r<E.aoa.length;r++){
+      const row=E.aoa[r]; if(!row) continue;
+      const idp=keyStr(row[idCol]); if(!idp) continue;
+      const vraw=row[valCol]; if(vraw==null||vraw==='') continue;
+      const hv = hrCol!=null?row[hrCol]:null;
+      const hora = (hv instanceof Date)?(pad(hv.getHours())+':'+pad(hv.getMinutes())):(hv!=null?hv.toString():'');
+      extratoRaw.push({
+        identificador_pagamento: idp,
+        valor_recebido: toNum(vraw),
+        data_pagamento: fmtDate(row[dtCol]),
+        hora_pagamento: hora,
+        cpf_cnpj_pagador: row[cpfCol]!=null?row[cpfCol].toString():'',
+        nome_pagador: row[nomeCol]!=null?row[nomeCol].toString():'',
+      });
+      const ped=shMap.get(idp);
+      if(!ped){ dropped++; continue; }        // fora do Shipay: não entra na planilha
+      const ct=ctMap.get(ped);
+      recs.push({
+        data: fmtDate(row[dtCol]),
+        nome: row[nomeCol]!=null?row[nomeCol].toString():'',
+        razao: ct?(ct.raz!=null?ct.raz.toString():''):'',
+        cpf: row[cpfCol]!=null?row[cpfCol].toString():'',
+        valor: toNum(vraw),
+        nf: ct?keyStr(ct.nf):'',
+        romaneio: ct?fmtRom(ct.rom):'',
+        noMatch: !ct,
+        ts: getTs(row[dtCol], hrCol!=null?row[hrCol]:null),
+      });
+    }
+    recs.forEach((r,i)=>r._i=i);
+    recs.sort((a,b)=>{ const ta=a.ts,tb=b.ts; if(ta==null&&tb==null)return a._i-b._i; if(ta==null)return 1; if(tb==null)return -1; return (ta-tb)||(a._i-b._i); });
+    return { records:recs, dropped, extrato:extratoRaw };
+  }
+
+  const SHEET_NAMES=['Crysllayne','Irislane','Alessandra','Lorena','Daniela'];
+
+  function makeSheet(recs){
+    const headers=['Data','Nome do pagador','Razão social','CPF/CNPJ','Valor(R$)','Nota Fiscal','Romaneio'];
+    const bd={style:'thin',color:{rgb:'D0D0D0'}}; const border={top:bd,bottom:bd,left:bd,right:bd};
+    const headStyle={font:{name:'Arial',sz:11,bold:true,color:{rgb:'FFFFFF'}},fill:{patternType:'solid',fgColor:{rgb:'1B5E3F'}},alignment:{horizontal:'center',vertical:'center'},border};
+    function dStyle(y,align,num){ const s={font:{name:'Arial',sz:10},border,alignment:{horizontal:align||'left',vertical:'center'}}; if(y)s.fill={patternType:'solid',fgColor:{rgb:'FFF2CC'}}; if(num)s.numFmt='R$ #,##0.00'; return s; }
+    const cols=['A','B','C','D','E','F','G']; const ws={};
+    headers.forEach((h,ci)=> ws[cols[ci]+'1']={v:h,t:'s',s:headStyle});
+    let sum=0;
+    recs.forEach((r,ri)=>{ const R=ri+2; const y=r.noMatch; sum+=r.valor;
+      ws['A'+R]={v:r.data,t:'s',s:dStyle(y,'center')};
+      ws['B'+R]={v:r.nome,t:'s',s:dStyle(y,'left')};
+      ws['C'+R]={v:r.razao,t:'s',s:dStyle(y,'left')};
+      ws['D'+R]={v:r.cpf,t:'s',s:dStyle(y,'left')};
+      ws['E'+R]={v:r.valor,t:'n',z:'R$ #,##0.00',s:dStyle(y,'right',true)};
+      ws['F'+R]={v:r.nf,t:'s',s:dStyle(y,'center')};
+      ws['G'+R]={v:r.romaneio,t:'s',s:dStyle(y,'center')};
+    });
+    const last=recs.length+1, TR=recs.length+2;
+    const tLbl={font:{name:'Arial',sz:10,bold:true},fill:{patternType:'solid',fgColor:{rgb:'DCEBE3'}},alignment:{horizontal:'right',vertical:'center'},border};
+    const tVal={font:{name:'Arial',sz:10,bold:true},fill:{patternType:'solid',fgColor:{rgb:'DCEBE3'}},alignment:{horizontal:'right',vertical:'center'},border,numFmt:'R$ #,##0.00'};
+    ws['D'+TR]={v:'TOTAL',t:'s',s:tLbl};
+    ws['E'+TR]={v:sum,t:'n',z:'R$ #,##0.00',s:tVal};
+    ws['!ref']='A1:G'+TR;
+    ws['!cols']=[{wch:12},{wch:34},{wch:34},{wch:22},{wch:16},{wch:13},{wch:14}];
+    ws['!autofilter']={ref:'A1:G'+last};
+    return ws;
+  }
+
+  function buildXlsx(recs){
+    const wb={SheetNames:[],Sheets:{}};
+    for(const nm of SHEET_NAMES){ wb.SheetNames.push(nm); wb.Sheets[nm]=makeSheet(recs); }
+    const out=XL.write(wb,{bookType:'xlsx',type:'array',cellStyles:true});
+    return new Blob([out],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  }
+
+  async function saveFile(filename, blob){
+    let downloads=null;
+    try{ if(window.claude && claude.use) downloads=await claude.use('downloads'); }catch(e){}
+    if(downloads){
+      try{ await downloads.save({filename, data:blob}); return true; }
+      catch(err){ if(err && err.code==='declined') return false; /* outros erros: cai no fallback */ }
+    }
+    const url=URL.createObjectURL(blob); const a=document.createElement('a');
+    a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),1500); return true;
+  }
+
+  // ---- UI ----
+  function slotEl(t){ return document.querySelector('.slot[data-slot="'+t+'"]'); }
+  function setSlot(t, filename){
+    const el=slotEl(t); el.classList.remove('error'); el.classList.add('ready');
+    el.querySelector('.file').textContent=filename;
+    el.querySelector('.state').textContent='pronto';
+  }
+  function refreshGen(){
+    const ok = state.shipay && state.control && state.extrato;
+    $('#gen').disabled = !ok;
+    if(ok) $('#msg').textContent='';
+  }
+
+  async function handleFiles(fileList){
+    const files=[...fileList];
+    for(const f of files){
+      try{
+        const buf=await f.arrayBuffer();
+        const wb=XL.read(buf,{type:'array',cellDates:true});
+        const res=analyze(wb);
+        if(res){ state[res.type]={...res, filename:f.name}; setSlot(res.type,f.name); }
+        else { $('#msg').textContent='Arquivo "'+f.name+'" não reconhecido — verifique se é o export do Shipay, Control ou Extrato.'; }
+      }catch(err){
+        $('#msg').textContent='Não foi possível ler "'+f.name+'": '+err.message;
+      }
+    }
+    refreshGen();
+  }
+
+  function countUp(el, target){
+    const start=performance.now(), dur=500;
+    function step(now){ const p=Math.min((now-start)/dur,1); const e=1-Math.pow(1-p,3); el.textContent=brl(target*e); if(p<1)requestAnimationFrame(step); else el.textContent=brl(target); }
+    requestAnimationFrame(step);
+  }
+
+  function renderResults(){
+    const res=buildRecords(); records=res.records; extratoRaw=res.extrato;
+    if(!records.length){
+      $('#results').classList.remove('show');
+      $('#msg').textContent='Nenhum registro do Shipay encontrado no extrato — verifique se os três arquivos correspondem ao mesmo período.';
+      return;
+    }
+    $('#msg').textContent = res.dropped ? (res.dropped.toLocaleString('pt-BR')+' pagamento(s) fora do Shipay não entraram na planilha.') : '';
+    const total=records.reduce((a,r)=>a+r.valor,0);
+    const nomatch=records.filter(r=>r.noMatch).length;
+    $('#f-count').textContent=records.length.toLocaleString('pt-BR');
+    $('#f-nomatch').textContent=nomatch.toLocaleString('pt-BR');
+    const tb=$('#preview tbody'); tb.innerHTML='';
+    const show=records.slice(0,12);
+    for(const r of show){
+      const tr=document.createElement('tr'); if(r.noMatch)tr.className='nomatch';
+      tr.innerHTML='<td class="ctr">'+r.data+'</td><td>'+esc(r.nome)+'</td><td>'+esc(r.razao)+'</td><td>'+esc(r.cpf)+'</td><td class="num">'+brl(r.valor)+'</td><td class="ctr">'+esc(r.nf)+'</td><td class="ctr">'+esc(r.romaneio)+'</td>';
+      tb.appendChild(tr);
+    }
+    if(records.length>show.length){
+      const tr=document.createElement('tr'); tr.innerHTML='<td colspan="7" class="more">+ '+(records.length-show.length)+' registros na planilha completa</td>'; tb.appendChild(tr);
+    }
+    $('#results').classList.add('show');
+    $('#f-total').textContent=brl(0); countUp($('#f-total'), total);
+    $('#results').scrollIntoView({behavior:'smooth', block:'start'});
+    const sbEl=document.getElementById('sb-status');
+    if(sbConfigured()){ saveToSupabase(records, extratoRaw); }
+    else if(sbEl){ sbEl.className='sb-status'; sbEl.innerHTML=''; }
+  }
+  function esc(s){ return (s==null?'':s.toString()).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
+
+  function resetAll(){
+    state.shipay=state.control=state.extrato=null; records=null; extratoRaw=null;
+    document.querySelectorAll('.slot').forEach(el=>{ el.classList.remove('ready','error'); el.querySelector('.file').textContent='—'; el.querySelector('.state').textContent='aguardando'; });
+    $('#results').classList.remove('show'); $('#msg').textContent=''; $('#file').value=''; refreshGen();
+  }
+
+  // theme
+  (function initTheme(){
+    const btns=[...document.querySelectorAll('.theme button')];
+    function current(){ try{ return localStorage.getItem('fenix-theme')||'auto'; }catch(e){ return 'auto'; } }
+    function apply(mode){
+      if(mode==='light'||mode==='dark') document.documentElement.setAttribute('data-theme',mode);
+      else document.documentElement.removeAttribute('data-theme');
+      btns.forEach(b=>b.classList.toggle('active', b.dataset.themeSet===mode));
+    }
+    btns.forEach(b=>b.addEventListener('click',()=>{
+      const mode=b.dataset.themeSet;
+      try{ if(mode==='auto') localStorage.removeItem('fenix-theme'); else localStorage.setItem('fenix-theme',mode); }catch(e){}
+      apply(mode);
+    }));
+    apply(current());
+  })();
+
+  // Supabase config panel
+  (function initSb(){
+    const urlI=document.getElementById('sb-url'), keyI=document.getElementById('sb-key');
+    const dot=document.getElementById('sb-cfg'), state=document.getElementById('sb-cfg-state'), msg=document.getElementById('sb-cfg-msg');
+    function paint(){
+      const on=sbConfigured();
+      dot.classList.toggle('ok',on);
+      state.textContent = on ? 'conectado' : 'não configurado';
+    }
+    const c=sbCfg(); urlI.value=c.url; keyI.value=c.key; paint();
+    document.getElementById('sb-save-cfg').addEventListener('click',()=>{
+      try{
+        const u=urlI.value.trim().replace(/\/+$/,''); const k=keyI.value.trim();
+        if(!u||!k){ msg.textContent='Informe URL e chave anon.'; return; }
+        localStorage.setItem(SB_URL_K,u); localStorage.setItem(SB_KEY_K,k);
+        msg.textContent='Conexão salva neste navegador.'; paint();
+      }catch(e){ msg.textContent='Não foi possível salvar: '+e.message; }
+    });
+    document.getElementById('sb-clear-cfg').addEventListener('click',()=>{
+      try{ localStorage.removeItem(SB_URL_K); localStorage.removeItem(SB_KEY_K); }catch(e){}
+      urlI.value=''; keyI.value=''; msg.textContent='Conexão removida.'; paint();
+    });
+  })();
+
+  // events
+  const drop=$('#drop'), input=$('#file');
+  drop.addEventListener('click',()=>input.click());
+  input.addEventListener('change',e=>handleFiles(e.target.files));
+  ['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('over');}));
+  ['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('over');}));
+  drop.addEventListener('drop',e=>{ if(e.dataTransfer&&e.dataTransfer.files) handleFiles(e.dataTransfer.files); });
+  $('#gen').addEventListener('click',renderResults);
+  $('#reset').addEventListener('click',resetAll);
+  $('#download').addEventListener('click',async()=>{
+    if(!records) return;
+    const btn=$('#download'); const label=btn.innerHTML; btn.disabled=true;
+    try{ const blob=buildXlsx(records); await saveFile('Consolidado_Pagamentos.xlsx', blob); }
+    catch(err){ $('#msg').textContent='Falha ao gerar a planilha: '+err.message; }
+    finally{ btn.disabled=false; btn.innerHTML=label; }
+  });
+
+  if(!XL){ $('#msg').textContent='Falha ao carregar a biblioteca de planilhas. Recarregue a página.'; }
+})();
+</script>
+</body>
+</html>
