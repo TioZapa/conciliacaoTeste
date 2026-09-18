@@ -195,6 +195,22 @@
   .itau-tot .k{display:block; font-size:12.5px; color:var(--muted); font-weight:500}
   .itau-tot .v{display:block; font-family:'Space Grotesk',sans-serif; font-weight:600; letter-spacing:-.01em; font-size:24px; margin-top:3px; font-variant-numeric:tabular-nums}
   .itau-tot.conc .v{color:var(--brand)}
+  .itau-conc-actions{display:flex; align-items:center; gap:14px; margin-top:18px; flex-wrap:wrap}
+  .itau-conc-actions .msg{color:var(--muted)}
+  .pend-head{margin-top:26px; padding-top:22px; border-top:1px solid var(--line)}
+  .pend-head h3{font-size:16px; font-weight:700; margin:0 0 4px; color:var(--warn-ink)}
+  .pend-head p{color:var(--muted); font-size:13px; margin:0 0 16px; max-width:70ch}
+  .pend-figs{display:grid; grid-template-columns:repeat(3,1fr); gap:0; border:1px solid var(--line); border-radius:12px; overflow:hidden; margin-bottom:16px}
+  .pend-figs .fig{padding:15px 18px}
+  .pend-figs .fig + .fig{border-left:1px solid var(--line)}
+  .pend-figs .fig .k{font-size:12px; color:var(--muted); font-weight:500}
+  .pend-figs .fig .v{font-family:'Space Grotesk',sans-serif; font-weight:600; letter-spacing:-.01em; font-size:22px; margin-top:3px; font-variant-numeric:tabular-nums}
+  .pend-figs .fig.warn .v{color:var(--warn-ink)}
+  .pend-dl{display:flex; align-items:center; gap:14px; margin-bottom:14px; flex-wrap:wrap}
+  .pend-count{font-size:13px; color:var(--muted)}
+  #pend-table td.num{text-align:right}
+  #pend-table td.ctr{text-align:center}
+  @media (max-width:560px){ .pend-figs{grid-template-columns:1fr} .pend-figs .fig + .fig{border-left:0;border-top:1px solid var(--line)} }
   @media (max-width:560px){ .itau-search{margin-left:0; width:100%} .itau-search input{width:100%} }
 
   .sb-cfg{margin-top:16px; padding:0; overflow:hidden}
@@ -305,7 +321,7 @@
     <div class="figs">
       <div class="fig"><div class="k">Registros</div><div class="v" id="f-count">0</div></div>
       <div class="fig total"><div class="k">Total recebido</div><div class="v" id="f-total">R$ 0,00</div></div>
-      <div class="fig warn"><div class="k">Sem romaneio</div><div class="v" id="f-nomatch">0</div></div>
+      <div class="fig warn"><div class="k">Pendências (s/ romaneio)</div><div class="v" id="f-nomatch">0</div></div>
     </div>
 
     <div class="dl">
@@ -351,6 +367,37 @@
           <div class="itau-tot"><span class="k">Total geral</span><span class="v" id="itau-total-geral">R$ 0,00</span></div>
           <div class="itau-tot conc"><span class="k">Total conciliado</span><span class="v" id="itau-total-conc">R$ 0,00</span></div>
         </div>
+
+        <div class="itau-conc-actions">
+          <button class="primary" id="btn-conciliar">Conciliar</button>
+          <span class="msg" id="conc-hint">Compara os recebimentos do banco com os romaneios e lista o que ainda não tem romaneio.</span>
+        </div>
+      </div>
+
+      <div id="pend-content" style="display:none">
+        <div class="pend-head">
+          <h3>Pendências Itaú</h3>
+          <p>Valores que caíram no banco mas <b>ainda não têm romaneio</b> — motoristas que ainda não chegaram da rota / acerto não entregue.</p>
+        </div>
+        <div class="pend-figs">
+          <div class="fig"><div class="k">Total no banco (extrato)</div><div class="v" id="pend-banco">R$ 0,00</div></div>
+          <div class="fig"><div class="k">Identificado (com romaneio)</div><div class="v" id="pend-ident">R$ 0,00</div></div>
+          <div class="fig warn"><div class="k">Pendências (s/ romaneio)</div><div class="v" id="pend-total">R$ 0,00</div></div>
+        </div>
+        <div class="pend-dl">
+          <button class="download" id="btn-pend-dl">
+            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Baixar Pendências (.xlsx)
+          </button>
+          <span class="pend-count" id="pend-count"></span>
+        </div>
+        <div class="tablewrap">
+          <table id="pend-table">
+            <thead><tr><th>Data</th><th>Nome do pagador</th><th>CPF/CNPJ</th><th>Valor (R$)</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="sb-status" id="pend-sb-status"></div>
       </div>
     </section>
   </div><!-- /panel-itau -->
@@ -377,7 +424,7 @@
 
   const state = { shipay:null, control:null, extrato:null };
   let records = null, extratoRaw = null;
-  let itauRows = [], itauDirty = false;
+  let itauRows = [], itauDirty = false, pendencias = [];
 
   // ---- Supabase ----
   const SB_URL_K='fenix-sb-url', SB_KEY_K='fenix-sb-key';
@@ -388,10 +435,13 @@
 
   function sbStatus(kind, html){ const el=document.getElementById('sb-status'); if(!el) return; el.className='sb-status show '+(kind||''); el.innerHTML=html; }
 
+  let lastConciliacaoId = null;
+  function uuid(){ return (crypto.randomUUID?crypto.randomUUID():(''+Date.now()+Math.random()).replace('.','')); }
+
   async function saveToSupabase(recs, extrato){
     const client=sbClient();
     if(!client){ return; }
-    const id=(crypto.randomUUID?crypto.randomUUID():(''+Date.now()+Math.random()).replace('.','') );
+    const id=uuid(); lastConciliacaoId=id;
     const d=todayStr();
     const acertosNome='acertos_'+d, extratoNome='extrato_'+d;
     sbStatus('run','Salvando no Supabase…');
@@ -405,6 +455,37 @@
       sbStatus('ok','✓ Salvo no Supabase — <b>'+acertosNome+'</b> ('+recs.length+' linhas) e <b>'+extratoNome+'</b> ('+extrato.length+' linhas). id da conciliação: <code>'+id+'</code>');
     }catch(err){
       sbStatus('err','Não foi possível gravar no Supabase: '+err.message+'. Verifique a URL, a chave anon, as tabelas e as políticas de acesso (RLS). Obs.: a versão publicada (link online) não acessa o Supabase — rode esta página hospedada por você.');
+    }
+  }
+
+  function pendStatus(kind, html){ const el=document.getElementById('pend-sb-status'); if(!el) return; el.className='sb-status show '+(kind||''); el.innerHTML=html; }
+
+  async function savePendenciasToSupabase(rows){
+    const client=sbClient();
+    if(!client) return;
+    if(!rows.length){ pendStatus('ok','Nenhuma pendência para gravar neste lançamento.'); return; }
+    const lancamento=uuid();
+    const d=todayStr();
+    const nome='pendencias_'+d;
+    const criado=new Date().toISOString();
+    pendStatus('run','Gravando pendências no Supabase…');
+    const pRows=rows.map(r=>({
+      lancamento_id: lancamento,
+      conciliacao_id: lastConciliacaoId,
+      nome: nome,
+      data: r.data,
+      nome_pagador: r.nome,
+      cpf_cnpj: r.cpf,
+      valor: r.valor,
+      identificador_pagamento: r.identificador,
+      criado_em: criado,
+    }));
+    try{
+      const res=await client.from('pendencias').insert(pRows);
+      if(res.error) throw new Error(res.error.message);
+      pendStatus('ok','✓ Lançamento gravado — <b>'+nome+'</b> ('+rows.length+' pendências). id do lançamento: <code>'+lancamento+'</code>');
+    }catch(err){
+      pendStatus('err','Não foi possível gravar as pendências: '+err.message+'. Confira se a tabela "pendencias" existe e se o RLS permite a gravação.');
     }
   }
 
@@ -480,39 +561,47 @@
           dtCol=E.colmap['data do pagamento'], hrCol=E.colmap['hora do pagamento'],
           cpfCol=E.colmap['cpf/cnpj do pagador efetivo'], nomeCol=E.colmap['nome do pagador efetivo'];
 
-    const recs=[]; let dropped=0; const extratoRaw=[];
+    const recs=[]; const pendencias=[]; const extratoRaw=[];
     for(let r=E.headerRow+1;r<E.aoa.length;r++){
       const row=E.aoa[r]; if(!row) continue;
       const idp=keyStr(row[idCol]); if(!idp) continue;
       const vraw=row[valCol]; if(vraw==null||vraw==='') continue;
       const hv = hrCol!=null?row[hrCol]:null;
       const hora = (hv instanceof Date)?(pad(hv.getHours())+':'+pad(hv.getMinutes())):(hv!=null?hv.toString():'');
+      const dataF=fmtDate(row[dtCol]);
+      const nomeF=row[nomeCol]!=null?row[nomeCol].toString():'';
+      const cpfF=row[cpfCol]!=null?row[cpfCol].toString():'';
+      const valorF=toNum(vraw);
+      const ts=getTs(row[dtCol], hrCol!=null?row[hrCol]:null);
       extratoRaw.push({
         identificador_pagamento: idp,
-        valor_recebido: toNum(vraw),
-        data_pagamento: fmtDate(row[dtCol]),
+        valor_recebido: valorF,
+        data_pagamento: dataF,
         hora_pagamento: hora,
-        cpf_cnpj_pagador: row[cpfCol]!=null?row[cpfCol].toString():'',
-        nome_pagador: row[nomeCol]!=null?row[nomeCol].toString():'',
+        cpf_cnpj_pagador: cpfF,
+        nome_pagador: nomeF,
       });
       const ped=shMap.get(idp);
-      if(!ped){ dropped++; continue; }        // fora do Shipay: não entra na planilha
-      const ct=ctMap.get(ped);
-      recs.push({
-        data: fmtDate(row[dtCol]),
-        nome: row[nomeCol]!=null?row[nomeCol].toString():'',
-        razao: ct?(ct.raz!=null?ct.raz.toString():''):'',
-        cpf: row[cpfCol]!=null?row[cpfCol].toString():'',
-        valor: toNum(vraw),
-        nf: ct?keyStr(ct.nf):'',
-        romaneio: ct?fmtRom(ct.rom):'',
-        noMatch: !ct,
-        ts: getTs(row[dtCol], hrCol!=null?row[hrCol]:null),
-      });
+      const ct=ped?ctMap.get(ped):null;
+      if(ct){
+        // acerto identificado: tem romaneio
+        recs.push({
+          data: dataF, nome: nomeF,
+          razao: ct.raz!=null?ct.raz.toString():'',
+          cpf: cpfF, valor: valorF,
+          nf: keyStr(ct.nf), romaneio: fmtRom(ct.rom),
+          noMatch: false, ts,
+        });
+      } else {
+        // pendência: valor no banco sem romaneio (motorista ainda não entregou o acerto)
+        pendencias.push({ data: dataF, nome: nomeF, cpf: cpfF, valor: valorF, identificador: idp, ts });
+      }
     }
     recs.forEach((r,i)=>r._i=i);
     recs.sort((a,b)=>{ const ta=a.ts,tb=b.ts; if(ta==null&&tb==null)return a._i-b._i; if(ta==null)return 1; if(tb==null)return -1; return (ta-tb)||(a._i-b._i); });
-    return { records:recs, dropped, extrato:extratoRaw };
+    pendencias.forEach((r,i)=>r._i=i);
+    pendencias.sort((a,b)=>{ const ta=a.ts,tb=b.ts; if(ta==null&&tb==null)return a._i-b._i; if(ta==null)return 1; if(tb==null)return -1; return (ta-tb)||(a._i-b._i); });
+    return { records:recs, pendencias, extrato:extratoRaw };
   }
 
   const SHEET_NAMES=['Crysllayne','Irislane','Alessandra','Lorena','Daniela'];
@@ -600,17 +689,16 @@
   }
 
   function renderResults(){
-    const res=buildRecords(); records=res.records; extratoRaw=res.extrato;
+    const res=buildRecords(); records=res.records; extratoRaw=res.extrato; pendencias=res.pendencias||[];
     if(!records.length){
       $('#results').classList.remove('show');
       $('#msg').textContent='Nenhum registro do Shipay encontrado no extrato — verifique se os três arquivos correspondem ao mesmo período.';
       return;
     }
-    $('#msg').textContent = res.dropped ? (res.dropped.toLocaleString('pt-BR')+' pagamento(s) fora do Shipay não entraram na planilha.') : '';
+    $('#msg').textContent = pendencias.length ? (pendencias.length.toLocaleString('pt-BR')+' pagamento(s) sem romaneio foram para Pendências Itaú (aba Conciliação Itaú).') : '';
     const total=records.reduce((a,r)=>a+r.valor,0);
-    const nomatch=records.filter(r=>r.noMatch).length;
     $('#f-count').textContent=records.length.toLocaleString('pt-BR');
-    $('#f-nomatch').textContent=nomatch.toLocaleString('pt-BR');
+    $('#f-nomatch').textContent=pendencias.length.toLocaleString('pt-BR');
     const tb=$('#preview tbody'); tb.innerHTML='';
     const show=records.slice(0,12);
     for(const r of show){
@@ -633,10 +721,11 @@
   function esc(s){ return (s==null?'':s.toString()).replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])); }
 
   function resetAll(){
-    state.shipay=state.control=state.extrato=null; records=null; extratoRaw=null;
+    state.shipay=state.control=state.extrato=null; records=null; extratoRaw=null; pendencias=[];
     itauRows=[]; itauDirty=false;
-    const ic=document.getElementById('itau-content'), ie=document.getElementById('itau-empty');
+    const ic=document.getElementById('itau-content'), ie=document.getElementById('itau-empty'), pc=document.getElementById('pend-content');
     if(ic&&ie){ ic.style.display='none'; ie.style.display=''; }
+    if(pc) pc.style.display='none';
     document.querySelectorAll('.slot').forEach(el=>{ el.classList.remove('ready','error'); el.querySelector('.file').textContent='—'; el.querySelector('.state').textContent='aguardando'; });
     $('#results').classList.remove('show'); $('#msg').textContent=''; $('#file').value=''; refreshGen();
   }
@@ -702,6 +791,7 @@
       });
       document.getElementById('itau-all').checked=false;
       const f=document.getElementById('itau-filter'); if(f) f.value='';
+      const pc=document.getElementById('pend-content'); if(pc) pc.style.display='none';
       itauDirty=false;
       updateItauTotals();
     }
@@ -734,7 +824,67 @@
         tr.style.display = (!q || rom.includes(q)) ? '' : 'none';
       });
     });
+    document.getElementById('btn-conciliar').addEventListener('click', conciliarItau);
+    document.getElementById('btn-pend-dl').addEventListener('click', async()=>{
+      const btn=document.getElementById('btn-pend-dl'); btn.disabled=true;
+      try{ const blob=buildPendenciasXlsx(pendencias); await saveFile('Pendencias_Itau.xlsx', blob); }
+      catch(err){ document.getElementById('conc-hint').textContent='Falha ao gerar: '+err.message; }
+      finally{ btn.disabled=false; }
+    });
   })();
+
+  function conciliarItau(){
+    if(!records || !records.length) return;
+    const totalIdent = records.reduce((a,r)=>a+r.valor,0);
+    const totalPend  = pendencias.reduce((a,r)=>a+r.valor,0);
+    const totalBanco = totalIdent + totalPend;
+    document.getElementById('pend-banco').textContent=brl(totalBanco);
+    document.getElementById('pend-ident').textContent=brl(totalIdent);
+    document.getElementById('pend-total').textContent=brl(totalPend);
+    document.getElementById('pend-count').textContent=pendencias.length.toLocaleString('pt-BR')+' pagamento(s) sem romaneio';
+    const tb=document.querySelector('#pend-table tbody'); tb.innerHTML='';
+    if(!pendencias.length){
+      tb.innerHTML='<tr><td colspan="4" class="more" style="color:var(--ok);padding:16px">Tudo conciliado — nenhum valor do banco está sem romaneio.</td></tr>';
+    } else {
+      for(const r of pendencias){
+        const tr=document.createElement('tr');
+        tr.innerHTML='<td class="ctr">'+esc(r.data)+'</td><td>'+esc(r.nome)+'</td><td>'+esc(r.cpf)+'</td><td class="num">'+brl(r.valor)+'</td>';
+        tb.appendChild(tr);
+      }
+    }
+    const pc=document.getElementById('pend-content'); pc.style.display='';
+    pc.scrollIntoView({behavior:'smooth', block:'start'});
+    if(sbConfigured()){ savePendenciasToSupabase(pendencias); }
+    else { const el=document.getElementById('pend-sb-status'); if(el){ el.className='sb-status'; el.innerHTML=''; } }
+  }
+
+  function buildPendenciasXlsx(rows){
+    const headers=['Data','Nome do pagador','CPF/CNPJ','Valor(R$)','Identificador do pagamento'];
+    const bd={style:'thin',color:{rgb:'D0D0D0'}}; const border={top:bd,bottom:bd,left:bd,right:bd};
+    const headStyle={font:{name:'Arial',sz:11,bold:true,color:{rgb:'FFFFFF'}},fill:{patternType:'solid',fgColor:{rgb:'8A6400'}},alignment:{horizontal:'center',vertical:'center'},border};
+    function dStyle(align,num){ const s={font:{name:'Arial',sz:10},border,alignment:{horizontal:align||'left',vertical:'center'}}; if(num)s.numFmt='R$ #,##0.00'; return s; }
+    const cols=['A','B','C','D','E']; const ws={};
+    headers.forEach((h,ci)=> ws[cols[ci]+'1']={v:h,t:'s',s:headStyle});
+    let sum=0;
+    rows.forEach((r,ri)=>{ const R=ri+2; sum+=r.valor;
+      ws['A'+R]={v:r.data,t:'s',s:dStyle('center')};
+      ws['B'+R]={v:r.nome,t:'s',s:dStyle('left')};
+      ws['C'+R]={v:r.cpf,t:'s',s:dStyle('left')};
+      ws['D'+R]={v:r.valor,t:'n',z:'R$ #,##0.00',s:dStyle('right',true)};
+      ws['E'+R]={v:r.identificador,t:'s',s:dStyle('left')};
+    });
+    const last=rows.length+1, TR=rows.length+2;
+    const tLbl={font:{name:'Arial',sz:10,bold:true},fill:{patternType:'solid',fgColor:{rgb:'FFF2CC'}},alignment:{horizontal:'right',vertical:'center'},border};
+    const tVal={font:{name:'Arial',sz:10,bold:true},fill:{patternType:'solid',fgColor:{rgb:'FFF2CC'}},alignment:{horizontal:'right',vertical:'center'},border,numFmt:'R$ #,##0.00'};
+    ws['C'+TR]={v:'TOTAL',t:'s',s:tLbl};
+    ws['D'+TR]={v:sum,t:'n',z:'R$ #,##0.00',s:tVal};
+    ws['!ref']='A1:E'+TR;
+    ws['!cols']=[{wch:12},{wch:34},{wch:22},{wch:16},{wch:38}];
+    ws['!autofilter']={ref:'A1:E'+last};
+    const wb={SheetNames:['Pendencias Itau'],Sheets:{'Pendencias Itau':ws}};
+    const out=XL.write(wb,{bookType:'xlsx',type:'array',cellStyles:true});
+    return new Blob([out],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+  }
 
   // tabs
   document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
