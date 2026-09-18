@@ -164,6 +164,39 @@
   .flow{color:var(--muted); font-size:13px; margin-top:14px; line-height:1.6}
   .flow code{background:var(--surface-2); border:1px solid var(--line); border-radius:5px; padding:1px 6px; font-size:12px}
 
+  .tabs{display:flex; gap:4px; margin:22px 0 0; border-bottom:1px solid var(--line)}
+  .tab{
+    font:inherit; font-weight:600; font-size:14px; color:var(--muted);
+    background:transparent; border:0; border-bottom:2px solid transparent;
+    padding:11px 16px; cursor:pointer; margin-bottom:-1px; transition:color .12s, border-color .12s;
+  }
+  .tab:hover{color:var(--ink)}
+  .tab.active{color:var(--brand); border-bottom-color:var(--brand)}
+  .panel{display:none; margin-top:22px}
+  .panel.active{display:block}
+  .panel > section{margin-top:0}
+  .panel > section + section{margin-top:22px}
+
+  .itau-empty{color:var(--muted); font-size:14px; padding:34px 20px; text-align:center; border:1px dashed var(--line-strong); border-radius:12px; background:var(--surface-2)}
+  .itau-bar{display:flex; align-items:center; gap:16px; margin-bottom:14px; flex-wrap:wrap}
+  .chk-all{display:inline-flex; align-items:center; gap:8px; font-size:13.5px; font-weight:600; color:var(--ink); cursor:pointer; user-select:none}
+  .itau-count{font-size:13px; color:var(--muted)}
+  .itau-search{margin-left:auto}
+  .itau-search input{font:inherit; font-size:13.5px; padding:8px 11px; border:1px solid var(--line); border-radius:9px; background:var(--surface-2); color:var(--ink); min-width:180px}
+  .itau-search input:focus{outline:none; border-color:var(--brand)}
+  .itau-tablewrap{max-height:52vh; overflow-y:auto}
+  #itau-table td.num{text-align:right}
+  #itau-table td.ctr,#itau-table th.ctr{text-align:center}
+  #itau-table tbody tr.on td{background:var(--ok-soft)}
+  #itau-table input[type=checkbox]{width:17px;height:17px;cursor:pointer;accent-color:var(--brand)}
+  .itau-totals{display:grid; grid-template-columns:1fr 1fr; gap:0; border:1px solid var(--line); border-radius:12px; overflow:hidden; margin-top:16px}
+  .itau-tot{padding:16px 20px}
+  .itau-tot + .itau-tot{border-left:1px solid var(--line)}
+  .itau-tot .k{display:block; font-size:12.5px; color:var(--muted); font-weight:500}
+  .itau-tot .v{display:block; font-family:'Space Grotesk',sans-serif; font-weight:600; letter-spacing:-.01em; font-size:24px; margin-top:3px; font-variant-numeric:tabular-nums}
+  .itau-tot.conc .v{color:var(--brand)}
+  @media (max-width:560px){ .itau-search{margin-left:0; width:100%} .itau-search input{width:100%} }
+
   .sb-cfg{margin-top:16px; padding:0; overflow:hidden}
   .sb-cfg summary{list-style:none; cursor:pointer; display:flex; align-items:center; gap:9px; padding:14px 18px; font-weight:600; font-size:14px}
   .sb-cfg summary::-webkit-details-marker{display:none}
@@ -230,6 +263,12 @@
     </div>
   </details>
 
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-tab="acertos" role="tab">Acertos</button>
+    <button class="tab" data-tab="itau" role="tab">Conciliação Itaú</button>
+  </nav>
+
+  <div class="panel active" id="panel-acertos">
   <section class="card card-pad">
     <div class="step-h"><span class="step-n">1</span><h2>Importar arquivos</h2></div>
 
@@ -287,6 +326,34 @@
       </table>
     </div>
   </section>
+  </div><!-- /panel-acertos -->
+
+  <div class="panel" id="panel-itau">
+    <section class="card card-pad">
+      <div class="step-h"><span class="step-n" style="background:var(--brand-soft);color:var(--brand)">✓</span><h2>Conciliação Itaú</h2></div>
+      <p class="sub" style="margin:0 0 18px">Marque os romaneios já identificados no extrato do Itaú. O total abaixo soma apenas os que estiverem marcados.</p>
+
+      <div id="itau-empty" class="itau-empty">Gere a planilha na aba <b>Acertos</b> para carregar os romaneios aqui.</div>
+
+      <div id="itau-content" style="display:none">
+        <div class="itau-bar">
+          <label class="chk-all"><input type="checkbox" id="itau-all"> Marcar todos</label>
+          <span class="itau-count" id="itau-count"></span>
+          <div class="itau-search"><input type="text" id="itau-filter" placeholder="Filtrar romaneio…" autocomplete="off"></div>
+        </div>
+        <div class="tablewrap itau-tablewrap">
+          <table id="itau-table">
+            <thead><tr><th>Romaneio</th><th>Valor (R$)</th><th class="ctr">Conciliar?</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="itau-totals">
+          <div class="itau-tot"><span class="k">Total geral</span><span class="v" id="itau-total-geral">R$ 0,00</span></div>
+          <div class="itau-tot conc"><span class="k">Total conciliado</span><span class="v" id="itau-total-conc">R$ 0,00</span></div>
+        </div>
+      </div>
+    </section>
+  </div><!-- /panel-itau -->
 
   <footer>Processamento 100% local no seu navegador — nenhum arquivo é enviado para servidores.</footer>
 </div>
@@ -310,6 +377,7 @@
 
   const state = { shipay:null, control:null, extrato:null };
   let records = null, extratoRaw = null;
+  let itauRows = [], itauDirty = false;
 
   // ---- Supabase ----
   const SB_URL_K='fenix-sb-url', SB_KEY_K='fenix-sb-key';
@@ -556,6 +624,8 @@
     $('#results').classList.add('show');
     $('#f-total').textContent=brl(0); countUp($('#f-total'), total);
     $('#results').scrollIntoView({behavior:'smooth', block:'start'});
+    itauDirty=true;
+    if(document.getElementById('panel-itau').classList.contains('active')) ensureItau();
     const sbEl=document.getElementById('sb-status');
     if(sbConfigured()){ saveToSupabase(records, extratoRaw); }
     else if(sbEl){ sbEl.className='sb-status'; sbEl.innerHTML=''; }
@@ -564,6 +634,9 @@
 
   function resetAll(){
     state.shipay=state.control=state.extrato=null; records=null; extratoRaw=null;
+    itauRows=[]; itauDirty=false;
+    const ic=document.getElementById('itau-content'), ie=document.getElementById('itau-empty');
+    if(ic&&ie){ ic.style.display='none'; ie.style.display=''; }
     document.querySelectorAll('.slot').forEach(el=>{ el.classList.remove('ready','error'); el.querySelector('.file').textContent='—'; el.querySelector('.state').textContent='aguardando'; });
     $('#results').classList.remove('show'); $('#msg').textContent=''; $('#file').value=''; refreshGen();
   }
@@ -608,6 +681,68 @@
       urlI.value=''; keyI.value=''; msg.textContent='Conexão removida.'; paint();
     });
   })();
+
+  // ---- Conciliação Itaú ----
+  function buildItauRows(){
+    const map=new Map();
+    for(const r of (records||[])){ const k=r.romaneio; if(!k) continue; map.set(k,(map.get(k)||0)+(r.valor||0)); }
+    itauRows=[...map.entries()].map(([romaneio,valor])=>({romaneio,valor}));
+    itauRows.sort((a,b)=>a.romaneio.localeCompare(b.romaneio,'pt',{numeric:true}));
+  }
+  function ensureItau(){
+    const empty=document.getElementById('itau-empty'), content=document.getElementById('itau-content');
+    if(!records || !records.length){ empty.style.display=''; content.style.display='none'; return; }
+    if(itauDirty){
+      buildItauRows();
+      const tb=document.querySelector('#itau-table tbody'); tb.innerHTML='';
+      itauRows.forEach((r,i)=>{
+        const tr=document.createElement('tr');
+        tr.innerHTML='<td>'+esc(r.romaneio)+'</td><td class="num">'+brl(r.valor)+'</td><td class="ctr"><input type="checkbox" class="itau-chk" data-i="'+i+'"></td>';
+        tb.appendChild(tr);
+      });
+      document.getElementById('itau-all').checked=false;
+      const f=document.getElementById('itau-filter'); if(f) f.value='';
+      itauDirty=false;
+      updateItauTotals();
+    }
+    empty.style.display='none'; content.style.display='';
+  }
+  function updateItauTotals(){
+    const geral=itauRows.reduce((a,r)=>a+r.valor,0);
+    let conc=0, nOn=0;
+    document.querySelectorAll('#itau-table .itau-chk').forEach(chk=>{
+      const tr=chk.closest('tr');
+      if(chk.checked){ conc+=itauRows[+chk.dataset.i].valor; nOn++; tr.classList.add('on'); }
+      else tr.classList.remove('on');
+    });
+    document.getElementById('itau-total-geral').textContent=brl(geral);
+    document.getElementById('itau-total-conc').textContent=brl(conc);
+    document.getElementById('itau-count').textContent=nOn+' de '+itauRows.length+' marcados';
+  }
+  (function wireItau(){
+    const tbody=document.querySelector('#itau-table tbody');
+    tbody.addEventListener('change',e=>{ if(e.target.classList.contains('itau-chk')) updateItauTotals(); });
+    document.getElementById('itau-all').addEventListener('change',e=>{
+      const on=e.target.checked;
+      document.querySelectorAll('#itau-table tbody tr').forEach(tr=>{ if(tr.style.display!=='none'){ const c=tr.querySelector('.itau-chk'); if(c) c.checked=on; } });
+      updateItauTotals();
+    });
+    document.getElementById('itau-filter').addEventListener('input',e=>{
+      const q=e.target.value.trim().toLowerCase();
+      document.querySelectorAll('#itau-table tbody tr').forEach(tr=>{
+        const rom=tr.firstChild.textContent.toLowerCase();
+        tr.style.display = (!q || rom.includes(q)) ? '' : 'none';
+      });
+    });
+  })();
+
+  // tabs
+  document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{
+    const name=t.dataset.tab;
+    document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===t));
+    document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active',p.id==='panel-'+name));
+    if(name==='itau') ensureItau();
+  }));
 
   // events
   const drop=$('#drop'), input=$('#file');
