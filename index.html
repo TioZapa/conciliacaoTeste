@@ -446,14 +446,16 @@
       <div class="step-h"><span class="step-n" style="background:var(--brand-soft);color:var(--brand)">✓</span><h2>Resumo</h2></div>
       <div id="resumo-empty" class="itau-empty">Clique em <b>Conciliar</b> na aba Conciliação Itaú para gerar o resumo.</div>
       <div id="resumo-content" style="display:none">
-        <p class="sub" style="margin:0 0 14px">Conciliação do dia. O <b>Saldo do sistema</b> = saldo disponível do banco − os boletos marcados na <b>Pendência Boletos</b> (atualiza conforme você seleciona), igual à aba da planilha.</p>
+        <p class="sub" style="margin:0 0 14px">Conciliação do dia. O <b>Saldo 341</b> = saldo disponível do banco − os boletos marcados na <b>Pendência Boletos</b> (atualiza conforme você seleciona), igual à aba da planilha.</p>
         <div class="pend-figs">
           <div class="fig"><div class="k">Saldo anterior (banco)</div><div class="v" id="rs-saldo-ant">R$ 0,00</div></div>
-          <div class="fig warn"><div class="k">Soma da pendência (atual)</div><div class="v" id="rs-pend">R$ 0,00</div></div>
-          <div class="fig conc"><div class="k">Saldo do sistema</div><div class="v" id="rs-saldo-atual">R$ 0,00</div></div>
+          <div class="fig"><div class="k">Saldo atual disponível do banco</div><div class="v" id="rs-saldo-disp">R$ 0,00</div></div>
+          <div class="fig"><div class="k">Pendência anterior</div><div class="v" id="rs-pend-ant">R$ 0,00</div></div>
         </div>
         <div class="pend-figs" style="margin-top:16px">
-          <div class="fig"><div class="k">Extrato do dia — Pix com romaneio</div><div class="v" id="rs-pixrom">R$ 0,00</div></div>
+          <div class="fig warn"><div class="k">Saldo 510</div><div class="v" id="rs-pend">R$ 0,00</div></div>
+          <div class="fig conc"><div class="k">Saldo 341</div><div class="v" id="rs-saldo-atual">R$ 0,00</div></div>
+          <div class="fig"><div class="k">Pix QR Code recebido — total do dia</div><div class="v" id="rs-pixrom">R$ 0,00</div></div>
         </div>
       </div>
     </section>
@@ -967,15 +969,16 @@
 
   function renderResumo(remover){
     const dia = baseMerged.filter(r=>r.origem==='novo');
-    let pixRom=0;
-    for(const r of dia){ const k=baseKey(r); if(recordKeys.has(k)) pixRom+=r.valor; }   // extrato do dia Pix com romaneio
+    let pixTotal=0;
+    for(const r of dia){ const k=baseKey(r); if(shipayKeys.has(k)) pixTotal+=r.valor; }   // Pix QR Code recebido — total do dia (tudo que está no Shipay)
     const somaPend = pendCalc.reduce((a,r)=>a+r.valor,0);
-    const temSaldo = lancSaldoAnterior!=null;
-    const saldoAnt = temSaldo?lancSaldoAnterior:0;
-    document.getElementById('rs-saldo-ant').textContent = temSaldo?brl(saldoAnt):'—';
-    document.getElementById('rs-pend').textContent = brl(somaPend);
-    updateSaldoSistema();                                    // saldo do sistema = saldo do banco - boletos selecionados
-    document.getElementById('rs-pixrom').textContent = brl(pixRom);
+    const pendAnt = (baseItau||[]).reduce((a,r)=>a+r.valor,0);   // pendência anterior = base acumulada
+    document.getElementById('rs-saldo-ant').textContent = lancSaldoAnterior!=null?brl(lancSaldoAnterior):'—';
+    document.getElementById('rs-saldo-disp').textContent = lancSaldoFinal!=null?brl(lancSaldoFinal):'—';
+    document.getElementById('rs-pend-ant').textContent = brl(pendAnt);
+    document.getElementById('rs-pend').textContent = brl(somaPend);              // Saldo 510
+    updateSaldoSistema();                                                        // Saldo 341 = saldo disponível do banco - boletos selecionados
+    document.getElementById('rs-pixrom').textContent = brl(pixTotal);
     document.getElementById('resumo-empty').style.display='none';
     document.getElementById('resumo-content').style.display='';
   }
